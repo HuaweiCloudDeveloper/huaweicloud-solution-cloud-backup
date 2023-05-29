@@ -1,0 +1,130 @@
+{
+    "terraform": {
+        "required_providers": [
+            {
+                "huaweicloud": {
+                    "source": "huawei.com/provider/huaweicloud",
+                    "version": ">=1.42.0"
+                }
+            }
+        ]
+    },
+    "provider": {
+        "huaweicloud": {
+            "cloud": "myhuaweicloud.com",
+            "endpoints": {
+                "iam": "iam.ap-southeast-3.myhuaweicloud.com",
+                "dns": "dns.ap-southeast-3.myhuaweicloud.com"
+            },
+            "insecure": true,
+            "region": "ap-southeast-3",
+            "auth_url": "https://iam.ap-southeast-3.myhuaweicloud.com/v3"
+        }
+    },
+    "variable": {
+        "storage_pool_name": {
+            "default": "cloud-backup_demo",
+            "description": "The vault name, which can contain letters, digits, underscores (_), and hyphens (-) and must be 1 to 64 characters long. The default name is cloud-backup_demo.",
+            "type": "string",
+            "nullable": "false",
+            "validation": {
+                "condition": "${length(regexall(\"^[\\\\w\\\\.\\\\-]{1,63}$\",var.storage_pool_name))>0}",
+                "error_message": "Invalid input. Please re-enter."
+            }
+        },
+        "storage_pool_size": {
+            "default": 500,
+            "description": "The vault capacity, ranging from 10 GB to 10485760 GB. It is recommended that the vault capacity be at least the total size of disks on the cloud servers. The default capacity is 500 GB.",
+            "type": "number",
+            "nullable": "false",
+            "validation": {
+                "condition": "${length(regexall(\"^(1\\\\d|[2-9]\\\\d|[1-9]\\\\d{2,6}|10[0-3]\\\\d{5}|104[0-7]\\\\d{4}|1048[0-4]\\\\d{3}|10485[0-6]\\\\d{2}|104857[0-5]\\\\d|10485760)$\",var.storage_pool_size))>0}",
+                "error_message": "Invalid input. Please re-enter."
+            }
+        },
+        "backup_interval": {
+            "default": 3,
+            "description": "The backup frequency, which specifies the interval (1 to 30 days) for executing backup tasks. The default frequency is 3 days.",
+            "type": "number",
+            "nullable": "false",
+            "validation": {
+                "condition": "${length(regexall(\"^([1-9]|[1-2]\\\\d|30)$\",var.backup_interval))>0}",
+                "error_message": "Invalid input. Please re-enter."
+            }
+        },
+        "backup_time": {
+            "default": "14:00",
+            "description": "The execution time, which specifies at the beginning of which hour (00:00–23:00) in a day backup is scheduled. It is recommended that backups be performed during off-peak hours or when no services are running. The actual execution time is the configured time plus 8 hours. The default value is 14:00, meaning that the actual backup execution time is 22:00.",
+            "type": "string",
+            "nullable": "false",
+            "validation": {
+                "condition": "${length(regexall(\"^(0\\\\d|1\\\\d|2[0-3]):[0-5]\\\\d$\",var.backup_time))>0}",
+                "error_message": "Invalid input. Please re-enter."
+            }
+        },
+        "time_period": {
+            "default": 30,
+            "description": "How long backups will be retained, in days. The value ranges from 2 to 99999, and the default value is 30.",
+            "type": "number",
+            "nullable": "false",
+            "validation": {
+                "condition": "${length(regexall(\"^([2-9]|[1-9]\\\\d{1,4})$\",var.time_period))>0}",
+                "error_message": "Invalid input. Please re-enter."
+            }
+        }
+    },
+    "data": {
+        "huaweicloud_cbr_vaults": {
+            "cbr_vaults": {
+                "type": "server"
+            }
+        },
+        "huaweicloud_compute_instances": {
+            "compute_instances": {}
+        }
+    },
+    "locals": {
+        "ecs_cbr_id": "${setsubtract(local.ecs_ids,flatten(local.server_ids))}",
+        "ecs_ids": "${data.huaweicloud_compute_instances.compute_instances.instances[*].id}",
+        "server_ids": "${data.huaweicloud_cbr_vaults.cbr_vaults.vaults[*].resources[*].server_id}"
+    },
+    "resource": {
+        "huaweicloud_cbr_policy": {
+            "cbr_policy": {
+                "backup_cycle": [
+                    {
+                        "execution_times": [
+                            "03:00"
+                        ],
+                        "interval": "${var.backup_interval}"
+                    }
+                ],
+                "name": "${var.storage_pool_name}",
+                "time_period": "${var.time_period}",
+                "type": "backup"
+            }
+        },
+        "huaweicloud_cbr_vault": {
+            "cbr_vault": {
+                "auto_expand": true,
+                "consistent_level": "crash_consistent",
+                "dynamic": {
+                    "resources": {
+                        "for_each": "${local.ecs_cbr_id}",
+                        "content": {
+                            "server_id": "${resources.value}"
+                        }
+                    }
+                },
+                "name": "${var.storage_pool_name}",
+                "policy_id": "${huaweicloud_cbr_policy.cbr_policy.id}",
+                "protection_type": "backup",
+                "size": "${var.storage_pool_size}",
+                "tags": {
+                    "foo": "bar"
+                },
+                "type": "server"
+            }
+        }
+    }
+}
